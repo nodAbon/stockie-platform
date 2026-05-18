@@ -134,6 +134,25 @@ app.get('/api/stock-analysis', async (req: Request, res: Response) => {
   }
 });
 
+// 4. Proxy to Python Related Stocks API
+app.get('/api/related-stocks', async (req: Request, res: Response) => {
+  const ticker = req.query.ticker as string;
+  if (!ticker) {
+    return res.status(400).json({ error: 'Ticker query parameter is required' });
+  }
+  try {
+    const response = await axios.get(`${PYTHON_ENGINE_URL}/api/related-stocks`, {
+      params: { ticker },
+      timeout: 20000
+    });
+    res.json(response.data);
+  } catch (error: any) {
+    console.error(`Error forwarding related-stocks for ${ticker}:`, error.message);
+    // Return empty related list on failure — frontend handles it gracefully
+    res.json({ ticker, related: [] });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`[API Gateway] Running successfully on http://localhost:${PORT}`);
 });
