@@ -226,12 +226,72 @@ def _fetch_fundamentals(ticker):
     return {**static, "source": "curated"} if static else {"pe": 0, "pb": 0, "margin": 0, "growth": 0, "source": "unknown"}
 
 
+def _fetch_price(ticker: str) -> dict:
+    """Fetch current price and analyst target for a ticker.
+    Korean: Naver XML chart. US: yfinance info.
+    Returns { current_price, target_price, currency, price_note }
+    """
+    import requests as _req
+    import xml.etree.ElementTree as _ET
+    import re as _re
+
+    clean = ticker.upper()
+    is_korean = clean.isdigit() or clean.endswith('.KS') or clean.endswith('.KQ')
+    code = _re.sub(r'\D', '', clean)[:6] if is_korean else clean
+
+    if is_korean and code:
+        try:
+            url = f'https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=5&requestType=0'
+            res = _req.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+            xml = res.content.decode('euc-kr', errors='replace')
+            xml = xml.replace('encoding="EUC-KR"', 'encoding="UTF-8"', 1)
+            root = _ET.fromstring(xml)
+            items = root.findall('.//item')
+            if items:
+                last_data = items[-1].get('data', '').split('|')
+                if len(last_data) >= 5:
+                    price = float(last_data[4])
+                    # Simple target: if undervalued (low PBR), target = price * 1.15; else * 1.08
+                    fd = STATIC_FUNDAMENTALS.get(code, {})
+                    pb = fd.get('pb', 2.0)
+                    upside = 1.20 if pb < 1.0 else 1.15 if pb < 2.0 else 1.08
+                    target = round((price * upside) / 100) * 100
+                    return {
+                        'current_price': int(price),
+                        'target_price': int(target),
+                        'upside_pct': round((upside - 1) * 100, 0),
+                        'currency': 'KRW',
+                        'price_note': '네이버 당일 종가'
+                    }
+        except Exception:
+            pass
+    else:
+        try:
+            info = yf.Ticker(ticker).info or {}
+            price  = float(info.get('currentPrice') or info.get('regularMarketPrice') or 0)
+            target = float(info.get('targetMeanPrice') or 0)
+            if price > 0:
+                upside_pct = round(((target / price) - 1) * 100, 1) if target > 0 else 10.0
+                return {
+                    'current_price': round(price, 2),
+                    'target_price': round(target, 2) if target > 0 else round(price * 1.12, 2),
+                    'upside_pct': upside_pct,
+                    'currency': 'USD',
+                    'price_note': '애널리스트 컨센서스 목표가' if target > 0 else '추정 목표가'
+                }
+        except Exception:
+            pass
+
+    return {'current_price': 0, 'target_price': 0, 'upside_pct': 0, 'currency': 'KRW' if is_korean else 'USD', 'price_note': '가격 조회 실패'}
+
+
 def _build_result(candidate, primary_ticker):
     t = candidate['ticker']
     clean_primary = primary_ticker.upper().replace('.KS','').replace('.KQ','')
     if t.upper() in (clean_primary, primary_ticker.upper()):
         return None
     fd    = _fetch_fundamentals(t)
+    price = _fetch_price(t)
     score = _value_score(fd['pe'], fd['pb'], fd['margin'], fd['growth'])
     grade, color = ("💎 고가치","emerald") if score >= 70 else ("📊 적정","amber") if score >= 50 else ("⚠️ 고평가","red")
     highlights = []
@@ -244,6 +304,11 @@ def _build_result(candidate, primary_ticker):
         "ticker": t, "name": candidate['name'],
         "relation": candidate['relation'], "tag": candidate['tag'],
         "pe": fd['pe'], "pb": fd['pb'], "margin": fd['margin'], "growth": fd['growth'],
+        "current_price": price['current_price'],
+        "target_price": price['target_price'],
+        "upside_pct": price['upside_pct'],
+        "currency": price['currency'],
+        "price_note": price['price_note'],
         "value_score": score, "value_grade": grade, "grade_color": color,
         "highlights": highlights, "data_source": fd['source']
     }
