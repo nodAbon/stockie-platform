@@ -35,10 +35,11 @@ export const MarketIntelligence: React.FC = () => {
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingPrices(true);
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://stockie-platform.onrender.com';
       try {
         const promises = surgingStocks.map(async (stock) => {
           try {
-            const res = await fetch(`http://localhost:4000/api/stock-analysis?ticker=${stock.ticker}`);
+            const res = await fetch(`${BACKEND_URL}/api/stock-analysis?ticker=${stock.ticker}`);
             if (!res.ok) throw new Error('API response failed');
             const data = await res.json();
             return { ticker: stock.ticker, data };

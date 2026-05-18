@@ -7,7 +7,7 @@ import { NewsCard } from './components/NewsCard';
 import { BeginnerGuidance } from './components/BeginnerGuidance';
 import { MarketIntelligence } from './components/MarketIntelligence';
 
-const BACKEND_URL = 'http://localhost:4000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://stockie-platform.onrender.com';
 
 interface IndexInfo {
   price: number;
@@ -50,15 +50,30 @@ interface SentimentSummary {
 }
 
 interface AIPrediction {
-  predicted_close: number;
-  predicted_change_pct: number;
-  confidence_level: number;
-  range_low: number;
-  range_high: number;
-  ai_rationale: string;
+  // Expected trading band (replaces single predicted_close)
+  band_low: number;
+  band_high: number;
+  band_low_fmt: string;
+  band_high_fmt: string;
+  avg_daily_range_pct: number;
+  // Technical indicators
+  rsi: number;
+  macd_line: number;
+  signal_line: number;
+  macd_histogram: number;
+  macd_crossover: 'golden' | 'dead' | 'none';
+  macd_sufficient: boolean;
+  // Data quality grade (replaces fake confidence %)
+  data_quality: { grade: string; color: string; real_data: boolean };
+  // Signal
   trading_signal: string;
   signal_label: string;
   signal_comment: string;
+  rsi_note: string;
+  macd_note: string;
+  // Rationale + disclaimer
+  ai_rationale: string;
+  disclaimer: string;
 }
 
 interface StockAnalysisData {
@@ -70,10 +85,12 @@ interface StockAnalysisData {
     source: string;
     date: string;
     sentiment: 'Positive' | 'Negative' | 'Neutral';
+    is_simulated?: boolean;
   }>;
   sentiment: SentimentSummary;
   ai_prediction?: AIPrediction;
 }
+
 
 function App() {
   // 1. Radar State
@@ -410,64 +427,131 @@ function App() {
                     </div>
                   </div>
 
-                  {/* AI Estimated Closing Price Panel */}
+                  {/* ── AI Analysis Panel (Refactored v2) ── */}
                   {stockData.ai_prediction && (
                     <div className="mt-6 p-4 rounded-xl border border-purple-500/20 bg-gradient-to-br from-gray-900/60 to-purple-950/10 relative overflow-hidden shadow-[0_0_15px_rgba(168,85,247,0.05)]">
                       <div className="absolute right-0 top-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
-                      
-                      <div className="flex justify-between items-start mb-3">
+
+                      {/* Header row */}
+                      <div className="flex justify-between items-center mb-3">
                         <span className="text-[10px] font-bold text-purple-400 flex items-center gap-1 uppercase tracking-wider">
-                          <span>🔮</span> AI 당일 예상 종가 분석
+                          <span>🔮</span> AI 당일 시장 분석
                         </span>
-                        
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 font-bold">
-                          AI 신뢰도 {stockData.ai_prediction.confidence_level}%
+                        {/* Data quality grade (replaces fake confidence %) */}
+                        <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
+                          stockData.ai_prediction.data_quality.color === 'green'  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                          stockData.ai_prediction.data_quality.color === 'amber'  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                          stockData.ai_prediction.data_quality.color === 'red'    ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                          'bg-gray-800 border-gray-700 text-gray-400'
+                        }`}>
+                          데이터 {stockData.ai_prediction.data_quality.grade}
                         </span>
                       </div>
-                      
-                      <div className="flex justify-between items-baseline mb-2">
-                        <span className="text-xl font-black text-white numeric-font">
-                          {stockData.ai_prediction.predicted_close.toLocaleString('ko-KR')}
-                          <span className="text-xs font-bold text-gray-400 ml-1">
-                            {stockData.is_korean ? '원' : '달러'}
+
+                      {/* Expected trading band (honest range instead of single fake close) */}
+                      <div className="mb-3">
+                        <p className="text-[10px] text-gray-500 font-semibold mb-1">📊 당일 예상 거래 밴드 <span className="text-gray-600">(30일 변동성 기반)</span></p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-black text-white numeric-font">
+                            {stockData.ai_prediction.band_low_fmt}
                           </span>
-                        </span>
-                        
-                        <span className="text-[10px] font-bold text-purple-400 numeric-font">
-                          범위: {stockData.ai_prediction.range_low.toLocaleString('ko-KR')} ~ {stockData.ai_prediction.range_high.toLocaleString('ko-KR')}
-                        </span>
+                          <span className="text-gray-500 font-bold">~</span>
+                          <span className="text-lg font-black text-white numeric-font">
+                            {stockData.ai_prediction.band_high_fmt}
+                          </span>
+                          <span className="ml-auto text-[10px] text-gray-500 numeric-font">
+                            ±{stockData.ai_prediction.avg_daily_range_pct.toFixed(1)}%
+                          </span>
+                        </div>
                       </div>
-                      
-                      <p className="text-[10px] text-gray-400 leading-relaxed italic border-t border-purple-500/10 pt-2.5 mt-2.5 mb-3">
+
+                      {/* RSI + MACD row */}
+                      {stockData.ai_prediction.macd_sufficient && (
+                        <div className="grid grid-cols-2 gap-3 mb-3 border-t border-purple-500/10 pt-3">
+                          {/* RSI */}
+                          <div className="bg-gray-900/40 rounded-lg p-2.5">
+                            <p className="text-[9px] font-bold text-gray-500 mb-1">RSI (14)</p>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-base font-black numeric-font ${
+                                stockData.ai_prediction.rsi >= 70 ? 'text-red-400' :
+                                stockData.ai_prediction.rsi <= 30 ? 'text-emerald-400' :
+                                'text-white'
+                              }`}>
+                                {stockData.ai_prediction.rsi}
+                              </span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                stockData.ai_prediction.rsi >= 70 ? 'bg-red-500/10 text-red-400' :
+                                stockData.ai_prediction.rsi <= 30 ? 'bg-emerald-500/10 text-emerald-400' :
+                                'bg-gray-800 text-gray-400'
+                              }`}>
+                                {stockData.ai_prediction.rsi >= 70 ? '과매수' :
+                                 stockData.ai_prediction.rsi <= 30 ? '과매도' : '중립'}
+                              </span>
+                            </div>
+                            {stockData.ai_prediction.rsi_note && (
+                              <p className="text-[9px] text-amber-400 mt-1 leading-tight">{stockData.ai_prediction.rsi_note}</p>
+                            )}
+                          </div>
+
+                          {/* MACD */}
+                          <div className="bg-gray-900/40 rounded-lg p-2.5">
+                            <p className="text-[9px] font-bold text-gray-500 mb-1">MACD</p>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-base font-black numeric-font ${
+                                stockData.ai_prediction.macd_histogram > 0 ? 'text-emerald-400' : 'text-red-400'
+                              }`}>
+                                {stockData.ai_prediction.macd_histogram > 0 ? '▲' : '▼'}
+                              </span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                stockData.ai_prediction.macd_crossover === 'golden' ? 'bg-emerald-500/10 text-emerald-400' :
+                                stockData.ai_prediction.macd_crossover === 'dead'   ? 'bg-red-500/10 text-red-400' :
+                                'bg-gray-800 text-gray-400'
+                              }`}>
+                                {stockData.ai_prediction.macd_crossover === 'golden' ? '골든크로스' :
+                                 stockData.ai_prediction.macd_crossover === 'dead'   ? '데드크로스' : '중립'}
+                              </span>
+                            </div>
+                            {stockData.ai_prediction.macd_note && (
+                              <p className="text-[9px] text-emerald-400 mt-1 leading-tight">{stockData.ai_prediction.macd_note}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI rationale */}
+                      <p className="text-[10px] text-gray-400 leading-relaxed italic border-t border-purple-500/10 pt-2.5 mt-2 mb-3">
                         {stockData.ai_prediction.ai_rationale}
                       </p>
 
-                      {/* AI Trading Action Signal Row */}
-                      {stockData.ai_prediction.trading_signal && (
-                        <div className="mt-3 pt-3 border-t border-purple-500/10 flex flex-col gap-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                              <span>🎯</span> AI 실시간 매매 추천 신호
-                            </span>
-                            
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${
-                              stockData.ai_prediction.trading_signal === 'Strong Buy' ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.15)]' :
-                              stockData.ai_prediction.trading_signal === 'Buy' ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)]' :
-                              stockData.ai_prediction.trading_signal === 'Hold' ? 'bg-gray-800 border-gray-700 text-gray-300' :
-                              stockData.ai_prediction.trading_signal === 'Sell' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]' :
-                              'bg-indigo-500/15 border-indigo-500/40 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.15)]'
-                            }`}>
-                              {stockData.ai_prediction.signal_label}
-                            </span>
-                          </div>
-                          
-                          <p className="text-[10px] text-gray-300 leading-normal font-semibold bg-purple-950/20 p-2.5 rounded-lg border border-purple-500/5 mt-1">
-                            🚀 <strong className="text-purple-400">AI 가이드:</strong> {stockData.ai_prediction.signal_comment}
-                          </p>
+                      {/* Composite trading signal */}
+                      <div className="mt-3 pt-3 border-t border-purple-500/10 flex flex-col gap-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                            <span>🎯</span> AI 복합 매매 추천 신호
+                          </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${
+                            stockData.ai_prediction.trading_signal === 'Strong Buy'  ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.15)]' :
+                            stockData.ai_prediction.trading_signal === 'Buy'         ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)]' :
+                            stockData.ai_prediction.trading_signal === 'Hold'        ? 'bg-gray-800 border-gray-700 text-gray-300' :
+                            stockData.ai_prediction.trading_signal === 'Sell'        ? 'bg-blue-500/15 border-blue-500/40 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]' :
+                            'bg-indigo-500/15 border-indigo-500/40 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.15)]'
+                          }`}>
+                            {stockData.ai_prediction.signal_label}
+                          </span>
                         </div>
-                      )}
+
+                        <p className="text-[10px] text-gray-300 leading-normal font-semibold bg-purple-950/20 p-2.5 rounded-lg border border-purple-500/5">
+                          🚀 <strong className="text-purple-400">AI 가이드:</strong> {stockData.ai_prediction.signal_comment}
+                        </p>
+
+                        {/* Disclaimer — always visible, compact */}
+                        <p className="text-[9px] text-gray-600 leading-tight mt-1 border-t border-gray-800 pt-2">
+                          {stockData.ai_prediction.disclaimer}
+                        </p>
+                      </div>
                     </div>
                   )}
+
 
                   {/* Recharts Stock chart component */}
                   <StockChart 

@@ -7,6 +7,7 @@ interface NewsItem {
   source: string;
   date: string;
   sentiment: 'Positive' | 'Negative' | 'Neutral';
+  is_simulated?: boolean;
 }
 
 interface NewsCardProps {
@@ -14,11 +15,10 @@ interface NewsCardProps {
 }
 
 export const NewsCard: React.FC<NewsCardProps> = ({ news }) => {
-  // Map sentiment to corresponding classes and labels
   let badgeClass = 'badge-neutral';
   let badgeLabel = '💬 중립';
   let borderGlow = 'rgba(255, 255, 255, 0.05)';
-  
+
   if (news.sentiment === 'Positive') {
     badgeClass = 'badge-bullish';
     badgeLabel = '🔥 호재';
@@ -30,20 +30,20 @@ export const NewsCard: React.FC<NewsCardProps> = ({ news }) => {
   }
 
   return (
-    <div 
+    <div
       className="p-4 rounded-xl border transition-all duration-300 hover:bg-white/[0.01]"
       style={{
         backgroundColor: 'rgba(20, 26, 38, 0.25)',
         borderColor: 'rgba(255, 255, 255, 0.05)',
-        boxShadow: `0 0 10px ${borderGlow}`
+        boxShadow: `0 0 10px ${borderGlow}`,
+        opacity: news.is_simulated ? 0.7 : 1
       }}
     >
       <div className="flex justify-between items-start gap-4 mb-3">
-        {/* Clickable News Headline */}
-        <a 
-          href={news.link} 
-          target="_blank" 
-          rel="noopener noreferrer" 
+        <a
+          href={news.link}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-sm font-semibold text-gray-200 hover:text-white leading-relaxed flex items-center gap-1 group"
         >
           <span className="group-hover:underline">{news.title}</span>
@@ -56,9 +56,14 @@ export const NewsCard: React.FC<NewsCardProps> = ({ news }) => {
           <span className="font-bold text-gray-400">{news.source}</span>
           <span>•</span>
           <span>{news.date}</span>
+          {/* Simulation badge */}
+          {news.is_simulated && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-500 font-bold">
+              ⚠️ 시뮬레이션
+            </span>
+          )}
         </div>
-        
-        {/* Glowing Sentiment Badge */}
+
         <span className={`badge ${badgeClass}`}>
           {badgeLabel}
         </span>

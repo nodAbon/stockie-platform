@@ -5,183 +5,286 @@ import analyzer
 import re
 
 app = Flask(__name__)
-# Enable CORS for all routes (necessary for frontend/backend communication)
 CORS(app)
+
+DISCLAIMER = "⚠️ 이 분석은 참고 정보 제공 목적이며 투자 권유가 아닙니다. 투자 결정과 손익의 책임은 본인에게 있습니다."
+
+
+def _data_quality_grade(total_news: int, any_simulated: bool) -> dict:
+    """Returns a qualitative data quality grade instead of a fake confidence %.
+    
+    Grades:
+        '충분'     — 10+ real articles available
+        '보통'     — 5~9 real articles
+        '부족'     — 1~4 real articles
+        '⚠️ 시뮬레이션' — all articles are simulated (network fail)
+    """
+    if any_simulated:
+        return {'grade': '⚠️ 시뮬레이션', 'color': 'gray', 'real_data': False}
+    if total_news >= 10:
+        return {'grade': '충분', 'color': 'green', 'real_data': True}
+    elif total_news >= 5:
+        return {'grade': '보통', 'color': 'amber', 'real_data': True}
+    else:
+        return {'grade': '부족', 'color': 'red', 'real_data': True}
+
+
+def _trading_signal(pos_pct, neg_pct, change_pct, rsi, macd_crossover,
+                    avg_vol, cur_vol, any_simulated) -> dict:
+    """Compute trading signal using composite rules (news + technicals).
+    
+    Signal rules:
+        Strong Buy  = pos_pct >= 65 AND change >= 1.0 AND volume surge AND RSI < 65
+        Buy         = pos_pct >= 55 AND change >= 0 AND neg_pct < 30 AND RSI < 70
+        Hold        = (no clear edge) OR (simulated data)
+        Sell        = neg_pct >= 50 AND change <= 0 AND RSI > 40
+        Strong Sell = neg_pct >= 65 AND change <= -1.0 AND RSI > 50
+    RSI overbought/oversold overrides:
+        RSI > 75 → warn even if Buy signal
+        RSI < 25 → strengthen to Strong Buy regardless
+    MACD crossover bonus:
+        golden → upgrade one level
+        dead   → downgrade one level
+    """
+    if any_simulated:
+        return {
+            'signal': 'Hold',
+            'label':  '⚖️ 데이터 부족 — 관망',
+            'comment': '실시간 뉴스 데이터를 불러올 수 없어 신호 판단을 보류합니다. 잠시 후 다시 시도해 주세요.',
+            'rsi_note': '',
+            'macd_note': ''
+        }
+
+    # Determine volume surge (only if data available)
+    vol_surge = (cur_vol > avg_vol * 1.2) if (avg_vol > 0 and cur_vol > 0) else False
+
+    # Base signal from news + price
+    if neg_pct >= 65 and change_pct <= -1.0:
+        signal = 'Strong Sell'
+    elif neg_pct >= 50 and change_pct <= 0:
+        signal = 'Sell'
+    elif pos_pct >= 65 and change_pct >= 1.0 and vol_surge and rsi < 65:
+        signal = 'Strong Buy'
+    elif pos_pct >= 55 and change_pct >= 0 and neg_pct < 30 and rsi < 70:
+        signal = 'Buy'
+    else:
+        signal = 'Hold'
+
+    # MACD crossover adjustment
+    signal_order = ['Strong Sell', 'Sell', 'Hold', 'Buy', 'Strong Buy']
+    idx = signal_order.index(signal)
+    if macd_crossover == 'golden' and idx < 4:
+        idx += 1   # Upgrade
+    elif macd_crossover == 'dead' and idx > 0:
+        idx -= 1   # Downgrade
+    signal = signal_order[idx]
+
+    # RSI override notes
+    rsi_note = ''
+    if rsi >= 75:
+        rsi_note = f'RSI {rsi} → 과매수 구간. 단기 차익 실현 고려 필요.'
+        if signal == 'Strong Buy':
+            signal = 'Buy'
+            idx = signal_order.index(signal)
+    elif rsi <= 25:
+        rsi_note = f'RSI {rsi} → 과매도 구간. 반등 가능성 있는 저점.'
+        if signal in ('Hold', 'Sell'):
+            signal = 'Buy'
+
+    macd_note = ''
+    if macd_crossover == 'golden':
+        macd_note = 'MACD 골든크로스 감지 — 상승 모멘텀 전환 신호'
+    elif macd_crossover == 'dead':
+        macd_note = 'MACD 데드크로스 감지 — 하락 모멘텀 전환 신호'
+
+    labels = {
+        'Strong Buy':  '🔥 적극 매수',
+        'Buy':         '📈 분할 매수',
+        'Hold':        '⚖️ 관망 및 대기',
+        'Sell':        '📉 비중 축소',
+        'Strong Sell': '🚨 적극 매도 (대피)'
+    }
+    comments = {
+        'Strong Buy':  '강력한 호재 쏠림과 거래량 급증, 기술 지표가 동시에 상승을 가리킵니다. 적극적 진입이 단기적으로 유효한 매수 타이밍입니다.',
+        'Buy':         '호재성 여론이 우세하며 장중 방어 매수세가 견고합니다. 추격보다는 조정 시 분할 매수 비중을 채워나가는 진입 타이밍입니다.',
+        'Hold':        '호재와 악재 비율이 팽팽하거나 기술 지표가 중립입니다. 방향성이 확인될 때까지 신규 매수를 보류하고 관망하는 타이밍입니다.',
+        'Sell':        '악재성 기사 비율이 높고 단기 차익 실현 매물이 나오고 있습니다. 반등 시마다 보유 비중을 점진적으로 줄이는 매도 타이밍입니다.',
+        'Strong Sell': '부정적 보도와 가격 하락이 동시에 발생하고 있습니다. 지지선 붕괴 위험이 크므로 현금 확보 후 관망할 적극 매도 타이밍입니다.'
+    }
+
+    return {
+        'signal':    signal,
+        'label':     labels.get(signal, '⚖️ 관망 및 대기'),
+        'comment':   comments.get(signal, ''),
+        'rsi_note':  rsi_note,
+        'macd_note': macd_note
+    }
+
 
 @app.route('/api/market-radar', methods=['GET'])
 def market_radar():
-    """Returns real-time macro indices and calculated market sentiment guidelines."""
+    """Returns real-time macro indices and market sentiment."""
     try:
         radar_data = analyzer.get_market_radar()
         return jsonify(radar_data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/stock-analysis', methods=['GET'])
 def stock_analysis():
-    """Combines stock historical performance with news sentiment crawler results."""
+    """Combines stock data, news sentiment, RSI/MACD, and expected band."""
     ticker_query = request.args.get('ticker', '').strip()
     if not ticker_query:
         return jsonify({'error': 'Ticker parameter is required'}), 400
-        
+
     try:
-        # 1. Fetch stock daily price info and historical values
-        stock_info = analyzer.get_stock_analysis(ticker_query)
+        # 1. Stock price + history
+        stock_info    = analyzer.get_stock_analysis(ticker_query)
         resolved_ticker = stock_info['ticker']
-        
-        # 2. Dynamically crawl news based on whether it is Korean or US stock
-        is_korean = False
-        # Match if ticker consists of digits or contains .KS / .KQ
-        if re.search(r'\d{6}', resolved_ticker) or resolved_ticker.endswith('.KS') or resolved_ticker.endswith('.KQ'):
-            is_korean = True
-            news_items = scraper.get_naver_news(resolved_ticker)
-        else:
-            news_items = scraper.get_us_news(resolved_ticker)
-            
-        # 3. Compute aggregate sentiment percentages
-        pos_count = 0
-        neg_count = 0
-        neu_count = 0
-        
-        for item in news_items:
-            sent = item['sentiment']
-            if sent == 'Positive':
-                pos_count += 1
-            elif sent == 'Negative':
-                neg_count += 1
-            else:
-                neu_count += 1
-                
+
+        is_korean = bool(
+            re.search(r'\d{6}', resolved_ticker) or
+            resolved_ticker.endswith('.KS') or
+            resolved_ticker.endswith('.KQ')
+        )
+
+        # 2. News crawl
+        news_items = (
+            scraper.get_naver_news(resolved_ticker)
+            if is_korean
+            else scraper.get_us_news(resolved_ticker)
+        )
+
+        # 3. Sentiment aggregation
+        pos_count = sum(1 for n in news_items if n['sentiment'] == 'Positive')
+        neg_count = sum(1 for n in news_items if n['sentiment'] == 'Negative')
+        neu_count = sum(1 for n in news_items if n['sentiment'] == 'Neutral')
         total_news = len(news_items)
+        any_simulated = any(n.get('is_simulated', False) for n in news_items)
+
         pos_pct = round((pos_count / total_news) * 100, 1) if total_news > 0 else 0
         neg_pct = round((neg_count / total_news) * 100, 1) if total_news > 0 else 0
         neu_pct = round((neu_count / total_news) * 100, 1) if total_news > 0 else 0
-        
-        # Determine overall stock sentiment "weather" summary
+
         if total_news == 0:
-            weather = "안개 (분석 자료 부족)"
+            weather      = "안개 (분석 자료 부족)"
             weather_desc = "관련된 최신 뉴스가 없어 호재/악재 판정이 불가합니다."
         elif pos_count > neg_count and pos_count >= neu_count:
-            weather = "☀️ 맑음 (호재 가득)"
-            weather_desc = "호재성 기사와 긍정적인 전망이 지배적입니다. 매수 관심군으로 분류하기 좋은 상태입니다."
+            weather      = "☀️ 맑음 (호재 가득)"
+            weather_desc = "호재성 기사와 긍정적인 전망이 지배적입니다."
         elif neg_count > pos_count and neg_count >= neu_count:
-            weather = "🌧️ 비바람 (악재 주의)"
-            weather_desc = "악재성 기사와 부정적인 신호가 많이 잡힙니다. 신규 진입 시 리스크 관리가 긴요합니다."
+            weather      = "🌧️ 비바람 (악재 주의)"
+            weather_desc = "악재성 기사와 부정적인 신호가 많습니다. 신규 진입 시 리스크 관리가 필요합니다."
         else:
-            weather = "☁️ 흐림 (눈치 게임)"
-            weather_desc = "긍정과 부정 뉴스가 팽팽하게 대치 중이거나 중립적인 보도가 주를 이루어 관망이 필요합니다."
-            
-        sentiment_summary = {
-            'total_news': total_news,
-            'positive_count': pos_count,
-            'negative_count': neg_count,
-            'neutral_count': neu_count,
-            'positive_pct': pos_pct,
-            'negative_pct': neg_pct,
-            'neutral_pct': neu_pct,
-            'weather': weather,
-            'weather_description': weather_desc
-        }
-        
-        # 4. Calculate Antigravity AI's Estimated Closing Price for Today
-        price = stock_info['price']
-        change_pct = stock_info['change_pct']
-        
-        predicted_close = price
-        predicted_change_pct = change_pct
-        confidence_level = 85
-        range_low = price
-        range_high = price
-        ai_rationale = ""
-        
-        if price > 0:
-            import random
-            sentiment_drift = (pos_pct - neg_pct) / 100 * 0.008  # Max 0.8% drift
-            
-            # Predict a minor variation close to current price with a sentiment bias
-            predicted_change_pct = change_pct + (sentiment_drift * 100) + random.uniform(-0.15, 0.15)
-            predicted_close = price * (1 + (predicted_change_pct - change_pct) / 100)
-            
-            # Rounding appropriately
-            if is_korean:
-                predicted_close = round(predicted_close / 100) * 100  # Round to nearest 100 won
-                range_low = round((predicted_close * 0.985) / 100) * 100
-                range_high = round((predicted_close * 1.015) / 100) * 100
-            else:
-                predicted_close = round(predicted_close, 2)
-                range_low = round(predicted_close * 0.985, 2)
-                range_high = round(predicted_close * 1.015, 2)
-                
-            # Confidence logic
-            confidence_level = 82
-            if total_news > 10:
-                confidence_level = 90
-            elif total_news < 5:
-                confidence_level = 75
-                
-            # Pre-format the predicted close with proper currencies and rounding
-            formatted_close = f"{predicted_close:,.0f}원" if is_korean else f"${predicted_close:,.2f}"
-            
-            # Calculate AI Action Signal
-            if pos_pct >= 60 and change_pct >= 0.5:
-                trading_signal = "Strong Buy"
-                signal_label = "🔥 적극 매수"
-                signal_comment = "강력한 호재성 보도 쏠림과 함께 당일 장중 수급 거래량이 급격히 증가하고 있습니다. 상승 추세 모멘텀이 매우 강하여 적극적인 진입이 단기적으로 유효한 매수 타이밍입니다."
-            elif pos_pct >= 50 or (change_pct >= 0 and neg_pct < 35):
-                trading_signal = "Buy"
-                signal_label = "📈 분할 매수"
-                signal_comment = "호재성 여론이 비교적 우세하며 장중 저가 방어 매수세가 견고하게 유입됩니다. 급격한 추격보다 주가 음봉 조정 시 분할로 매수 비중을 채워나가는 진입 타이밍입니다."
-            elif neg_pct >= 60 and change_pct <= -0.5:
-                trading_signal = "Strong Sell"
-                signal_label = "🚨 적극 매도 (대피)"
-                signal_comment = "부정적인 악재성 보도 이슈가 집중되며 실시간 패닉 투매 압력이 증가하고 있습니다. 추가 하락 지지선 붕괴 위험이 크므로 일단 현금을 확보하고 대피할 적극 매도 타이밍입니다."
-            elif neg_pct >= 45 or change_pct < 0:
-                trading_signal = "Sell"
-                signal_label = "📉 비중 축소"
-                signal_comment = "악재성 기사 비율이 늘어나고 단기 차익 실현 욕구가 강해 지수 조정을 부추기고 있습니다. 지수 반등 시마다 보유 지분 비중을 점진적으로 낮추는 매도 타이밍입니다."
-            else:
-                trading_signal = "Hold"
-                signal_label = "⚖️ 관망 및 대기"
-                signal_comment = "시장 내 호재와 악재 기사 비율이 팽팽히 맞서며 뚜렷한 세력 수급 쏠림이 없는 횡보세입니다. 확실한 방향성이 보일 때까지 추가 매수를 보류하고 관망할 타이밍입니다."
+            weather      = "☁️ 흐림 (눈치 게임)"
+            weather_desc = "긍정과 부정 뉴스가 팽팽하게 대치 중이거나 중립 보도가 많습니다."
 
-            # AI Rationale text
-            if pos_pct >= 55 and change_pct >= 0:
-                ai_rationale = f"오늘 시장 보도 기사의 긍정 비율({pos_pct}%)이 우세하고 당일 장중 수급 유입 모멘텀이 강화되고 있습니다. 장 마감까지 이 상승세가 유지되며, 현재 대비 추가 보합/상승한 {formatted_close} 부근에서 마감할 가능성이 큽니다."
-            elif neg_pct >= 55 or change_pct < 0:
-                ai_rationale = f"현재 보도 여론 내 악재/부정 비율({neg_pct}%)이 잡혀 있고 장중 매도세가 관측됩니다. 장 막판 투매 압력이 일시 진정될 수 있으나 전반적으로 약보합 또는 소폭 하락 조정을 거친 {formatted_close}선에서 수렴 종가를 형성할 가능성이 유력합니다."
-            else:
-                ai_rationale = f"호재성 이슈와 악재성 기사 비율이 팽팽히 대치(중립 {neu_pct}%)하며 방향성이 모호합니다. 뚜렷한 세력 수급 쏠림이 보이지 않아, 현재 가격대 주변에서 등락을 거듭하다 {formatted_close} 부근 박스권 보합세로 장을 마칠 것으로 예상됩니다."
+        sentiment_summary = {
+            'total_news':      total_news,
+            'positive_count':  pos_count,
+            'negative_count':  neg_count,
+            'neutral_count':   neu_count,
+            'positive_pct':    pos_pct,
+            'negative_pct':    neg_pct,
+            'neutral_pct':     neu_pct,
+            'weather':         weather,
+            'weather_description': weather_desc,
+            'any_simulated':   any_simulated
+        }
+
+        # 4. Data quality grade (replaces fake confidence %)
+        data_quality = _data_quality_grade(total_news, any_simulated)
+
+        # 5. Technical indicators (RSI + MACD)
+        price         = stock_info.get('price', 0)
+        change_pct    = stock_info.get('change_pct', 0)
+        history       = stock_info.get('history', [])
+        prices_list   = [h['price'] for h in history if h.get('price', 0) > 0]
+        volume        = stock_info.get('volume', 0)
+
+        rsi  = analyzer.calculate_rsi(prices_list)
+        macd = analyzer.calculate_macd(prices_list)
+
+        # Approximate 5-day average volume from history (no volume series, use placeholder)
+        avg_vol = volume  # Can't compute true avg without volume series; skip vol_surge logic
+
+        # 6. Trading signal (composite)
+        signal_data = _trading_signal(
+            pos_pct, neg_pct, change_pct,
+            rsi, macd['crossover'],
+            avg_vol, volume, any_simulated
+        )
+
+        # 7. Expected trading band (replaces single predicted close)
+        band = analyzer.calculate_expected_band(history, price, is_korean)
+        if is_korean:
+            band_low_fmt  = f"{band['band_low']:,.0f}원"
+            band_high_fmt = f"{band['band_high']:,.0f}원"
         else:
-            trading_signal = "Hold"
-            signal_label = "⚖️ 분석 대기"
-            signal_comment = "종목 데이터가 부족하여 매매 타이밍 분석을 보류합니다."
-            ai_rationale = "종목 데이터가 부족하여 예상 종가를 산출하기 어렵습니다."
+            band_low_fmt  = f"${band['band_low']:,.2f}"
+            band_high_fmt = f"${band['band_high']:,.2f}"
+
+        # 8. AI rationale text
+        if any_simulated:
+            ai_rationale = "실시간 뉴스를 불러올 수 없어 상세 분석이 제한됩니다. 잠시 후 다시 시도해 주세요."
+        elif pos_pct >= 55 and change_pct >= 0:
+            ai_rationale = (
+                f"오늘 시장 보도 기사의 긍정 비율({pos_pct}%)이 우세하며 장중 수급 모멘텀이 강화되고 있습니다. "
+                f"30일 일중 변동 패턴 기준으로 당일 예상 거래 범위는 "
+                f"{band_low_fmt} ~ {band_high_fmt} 로 분석됩니다."
+            )
+        elif neg_pct >= 55 or change_pct < 0:
+            ai_rationale = (
+                f"현재 보도 여론 내 부정 비율({neg_pct}%)이 높으며 장중 매도 압력이 관측됩니다. "
+                f"30일 변동 패턴 기준 당일 예상 거래 범위는 "
+                f"{band_low_fmt} ~ {band_high_fmt} 로 분석됩니다."
+            )
+        else:
+            ai_rationale = (
+                f"호재와 악재 기사가 팽팽히 대치(중립 {neu_pct}%) 중이며 방향성이 모호합니다. "
+                f"당일 예상 거래 범위는 {band_low_fmt} ~ {band_high_fmt} 로 분석됩니다."
+            )
 
         ai_prediction = {
-            'predicted_close': float(predicted_close),
-            'predicted_change_pct': float(predicted_change_pct),
-            'confidence_level': int(confidence_level),
-            'range_low': float(range_low),
-            'range_high': float(range_high),
-            'ai_rationale': ai_rationale,
-            'trading_signal': trading_signal,
-            'signal_label': signal_label,
-            'signal_comment': signal_comment
+            # Band replaces single predicted close
+            'band_low':          band['band_low'],
+            'band_high':         band['band_high'],
+            'band_low_fmt':      band_low_fmt,
+            'band_high_fmt':     band_high_fmt,
+            'avg_daily_range_pct': band['avg_daily_range_pct'],
+            # Technical indicators
+            'rsi':               rsi,
+            'macd_line':         macd['macd_line'],
+            'signal_line':       macd['signal_line'],
+            'macd_histogram':    macd['histogram'],
+            'macd_crossover':    macd['crossover'],
+            'macd_sufficient':   macd['sufficient_data'],
+            # Data quality grade
+            'data_quality':      data_quality,
+            # Signal
+            'trading_signal':    signal_data['signal'],
+            'signal_label':      signal_data['label'],
+            'signal_comment':    signal_data['comment'],
+            'rsi_note':          signal_data['rsi_note'],
+            'macd_note':         signal_data['macd_note'],
+            # Rationale + disclaimer
+            'ai_rationale':      ai_rationale,
+            'disclaimer':        DISCLAIMER
         }
-        
-        # Combine everything together
+
         result = {
-            'stock': stock_info,
-            'is_korean': is_korean,
-            'news': news_items,
-            'sentiment': sentiment_summary,
+            'stock':        stock_info,
+            'is_korean':    is_korean,
+            'news':         news_items,
+            'sentiment':    sentiment_summary,
             'ai_prediction': ai_prediction
         }
-        
         return jsonify(result), 200
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 if __name__ == '__main__':
-    # Local development server running on port 5000
     app.run(host='0.0.0.0', port=5000, debug=True)
