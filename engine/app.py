@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import scraper
 import analyzer
+import related_stocks
 import re
 
 app = Flask(__name__)
@@ -286,5 +287,19 @@ def stock_analysis():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/related-stocks', methods=['GET'])
+def related_stocks_endpoint():
+    """Returns supply-chain related stocks with value scoring for a given ticker."""
+    ticker_query = request.args.get('ticker', '').strip()
+    if not ticker_query:
+        return jsonify({'error': 'Ticker parameter is required'}), 400
+    try:
+        recommendations = related_stocks.get_related_stocks(ticker_query)
+        return jsonify({'ticker': ticker_query, 'related': recommendations}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+

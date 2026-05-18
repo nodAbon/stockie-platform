@@ -6,6 +6,7 @@ import { StockChart } from './components/StockChart';
 import { NewsCard } from './components/NewsCard';
 import { BeginnerGuidance } from './components/BeginnerGuidance';
 import { MarketIntelligence } from './components/MarketIntelligence';
+import { RelatedStocks } from './components/RelatedStocks';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://stockie-platform.onrender.com';
 
@@ -552,6 +553,12 @@ function App() {
                     </div>
                   )}
 
+                  {/* Related Stocks — supply-chain value picks */}
+                  <RelatedStocks
+                    primaryTicker={stockData.stock.ticker}
+                    primaryName={stockData.stock.name}
+                    backendUrl={BACKEND_URL}
+                  />
 
                   {/* Recharts Stock chart component */}
                   <StockChart 
