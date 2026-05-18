@@ -604,7 +604,7 @@ function App() {
 
               {/* Right Column: Sentiment Analysis & Scrollable News Card List (3/5 size) */}
               <div className="lg:col-span-3 flex flex-col gap-6">
-                <div className="glass-panel flex-grow flex flex-col justify-between">
+                <div className="glass-panel flex flex-col">
                   <div>
                     {/* Stock Weather Summary */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-800/40 pb-4 mb-4 gap-4">
