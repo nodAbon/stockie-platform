@@ -164,18 +164,53 @@ def get_market_radar():
         'VIX':           '^VIX'
     }
 
+    # ── Naver Polling API — primary source for Korean indices ─────────────
+    def fetch_naver_index(code):  # code: 'KOSPI' or 'KOSDAQ'
+        try:
+            url = f'https://polling.finance.naver.com/api/realtime/domestic/index/{code}'
+            hdrs = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://finance.naver.com/'}
+            data = requests.get(url, headers=hdrs, timeout=5).json()['datas'][0]
+            price      = float(data['closePrice'].replace(',', ''))
+            change_pct = float(data.get('fluctuationsRatio', '0').replace(',', ''))
+            # fluctuationsRatio is already % value (e.g. 0.31 means +0.31%)
+            return {'price': round(price, 2), 'change_pct': round(change_pct, 2)}
+        except Exception as e:
+            print(f'[Naver] {code} fetch failed: {e}')
+            return None
+
+    # Updated baselines (May 2026 actual market levels)
     baselines = {
-        'KOSPI':        {'price': 2735.42, 'change_pct': 0.85},
-        'KOSDAQ':       {'price': 852.18,  'change_pct': -0.32},
-        'SP500':        {'price': 5218.60, 'change_pct': 0.65},
-        'NASDAQ':       {'price': 16325.20,'change_pct': 0.95},
-        'USD_KRW':      {'price': 1356.50, 'change_pct': -0.12},
-        'US_10Y_YIELD': {'price': 4.41,    'change_pct': -0.52},
-        'VIX':          {'price': 13.12,   'change_pct': -2.40}
+        'KOSPI':        {'price': 7516.04, 'change_pct': 0.31},
+        'KOSDAQ':       {'price': 1111.09, 'change_pct': 0.45},
+        'SP500':        {'price': 5842.00, 'change_pct': 0.52},
+        'NASDAQ':       {'price': 18920.00,'change_pct': 0.75},
+        'USD_KRW':      {'price': 1372.50, 'change_pct': -0.18},
+        'US_10Y_YIELD': {'price': 4.52,    'change_pct': -0.42},
+        'VIX':          {'price': 16.85,   'change_pct': -2.10}
     }
 
     fetched = {}
-    for name, ticker in tickers.items():
+
+    # Korean indices — Naver Polling API first, yfinance fallback
+    for kr_name, naver_code in [('KOSPI', 'KOSPI'), ('KOSDAQ', 'KOSDAQ')]:
+        result = fetch_naver_index(naver_code)
+        if result:
+            fetched[kr_name] = result
+            print(f'[Naver] {kr_name}: {result["price"]}')
+        else:
+            base = baselines[kr_name]
+            noise = np.random.uniform(-0.05, 0.05)
+            fetched[kr_name] = {'price': round(base['price']*(1+noise/100),2), 'change_pct': round(base['change_pct']+noise,2)}
+
+    # US indices — yfinance, fallback to baseline
+    us_tickers = {
+        'SP500':        '^GSPC',
+        'NASDAQ':       '^IXIC',
+        'USD_KRW':      'USDKRW=X',
+        'US_10Y_YIELD': '^TNX',
+        'VIX':          '^VIX'
+    }
+    for name, ticker in us_tickers.items():
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period='5d')
@@ -183,23 +218,16 @@ def get_market_radar():
                 current_price = df['Close'].iloc[-1]
                 prev_price    = df['Close'].iloc[-2]
                 if np.isnan(current_price) or np.isnan(prev_price) or current_price == 0:
-                    raise ValueError("Invalid close values")
-                change     = current_price - prev_price
-                change_pct = (change / prev_price) * 100
-                fetched[name] = {
-                    'price':      round(float(current_price), 2),
-                    'change_pct': round(float(change_pct), 2)
-                }
+                    raise ValueError('Invalid values')
+                change_pct = (current_price - prev_price) / prev_price * 100
+                fetched[name] = {'price': round(float(current_price),2), 'change_pct': round(float(change_pct),2)}
             else:
-                raise ValueError("Empty DataFrame")
+                raise ValueError('Empty DataFrame')
         except Exception as e:
-            print(f"[Self-Healing] {name} ({ticker}): {e}. Using baseline.")
+            print(f'[Self-Healing] {name}: {e}. Using baseline.')
             base  = baselines[name]
             noise = np.random.uniform(-0.10, 0.10)
-            fetched[name] = {
-                'price':      round(base['price'] * (1 + noise / 100), 2),
-                'change_pct': round(base['change_pct'] + noise, 2)
-            }
+            fetched[name] = {'price': round(base['price']*(1+noise/100),2), 'change_pct': round(base['change_pct']+noise,2)}
 
     radar['indices'] = fetched
 

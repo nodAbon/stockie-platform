@@ -24,9 +24,10 @@ interface RelatedStocksProps {
 }
 
 export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, primaryName, backendUrl }) => {
-  const [stocks, setStocks] = useState<RelatedStock[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError]   = useState<string>('');
+  const [stocks, setStocks]       = useState<RelatedStock[]>([]);
+  const [themeReason, setThemeReason] = useState<string>('');
+  const [loading, setLoading]     = useState<boolean>(true);
+  const [error, setError]         = useState<string>('');
 
   useEffect(() => {
     const fetchRelated = async () => {
@@ -39,8 +40,9 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
         const data = await res.json();
         if (data.related && data.related.length > 0) {
           setStocks(data.related);
+          setThemeReason(data.theme_reason || '');
         } else {
-          setError('연관 종목 데이터가 준비되지 않은 종목입니다.');
+          setError('이 종목의 뉴스에서 호재 테마를 감지할 수 없었습니다.');
         }
       } catch (e) {
         setError('연관 종목 데이터를 불러오는 중 오류가 발생했습니다.');
@@ -72,9 +74,14 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
           연관 저평가 수혜주 레이더
         </span>
       </div>
-      <p className="text-[10px] text-gray-500 font-semibold mb-4">
-        <strong className="text-gray-400">{primaryName}</strong>의 공급망·섹터 연관 종목 중 기업가치 대비 저평가되고 수익성이 높은 투자 후보입니다.
+      <p className="text-[10px] text-gray-500 font-semibold mb-1">
+        <strong className="text-gray-400">{primaryName}</strong>의 호재 뉴스에서 감지된 테마와 동일한 수혜를 받는 저평가 종목을 추천합니다.
       </p>
+      {themeReason && (
+        <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+          <span className="text-[10px] font-bold text-indigo-300">{themeReason} 동반 수혜주</span>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (

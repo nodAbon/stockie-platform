@@ -289,15 +289,24 @@ def stock_analysis():
 
 @app.route('/api/related-stocks', methods=['GET'])
 def related_stocks_endpoint():
-    """Returns supply-chain related stocks with value scoring for a given ticker."""
+    """Returns horae-theme based related stocks with value scoring.
+    
+    Accepts optional 'news' JSON array via query to detect themes from live news.
+    """
     ticker_query = request.args.get('ticker', '').strip()
     if not ticker_query:
         return jsonify({'error': 'Ticker parameter is required'}), 400
     try:
-        recommendations = related_stocks.get_related_stocks(ticker_query)
-        return jsonify({'ticker': ticker_query, 'related': recommendations}), 200
+        # Re-fetch news for this ticker to detect horae theme
+        clean = ticker_query.upper().replace('.KS','').replace('.KQ','')
+        import re as _re
+        is_korean = bool(_re.search(r'\d{6}', clean) or clean.endswith('.KS') or clean.endswith('.KQ') or clean.isdigit())
+        news_items = scraper.get_naver_news(ticker_query) if is_korean else scraper.get_us_news(ticker_query)
+        result = related_stocks.get_related_stocks(ticker_query, news_items)
+        return jsonify({'ticker': ticker_query, **result}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 
 if __name__ == '__main__':
