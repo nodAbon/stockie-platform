@@ -13,6 +13,7 @@ interface RelatedStock {
   current_price: number;
   target_price: number;
   upside_pct: number;
+  daily_change_pct: number;
   currency: string;
   price_note: string;
   value_score: number;
@@ -164,7 +165,9 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
                 <div>
                   <p className="text-[9px] text-gray-600 font-bold mb-0.5">현재가</p>
                   <p className={`text-lg font-black numeric-font ${
-                    stock.upside_pct > 0 ? 'text-emerald-400' : stock.upside_pct < 0 ? 'text-red-400' : 'text-white'
+                    stock.daily_change_pct > 0 ? 'text-red-400' :
+                    stock.daily_change_pct < 0 ? 'text-blue-400' :
+                    'text-white'
                   }`}>
                     {formatPrice(stock.current_price, stock.currency)}
                   </p>

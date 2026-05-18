@@ -227,9 +227,10 @@ def _fetch_fundamentals(ticker):
 
 
 def _fetch_price(ticker: str) -> dict:
-    """Fetch current price and analyst target for a ticker.
-    Korean: Naver XML chart. US: yfinance info.
-    Returns { current_price, target_price, currency, price_note }
+    """Fetch current price, target, and daily change for a ticker.
+    Korean: Naver XML chart (close vs open for daily_change_pct).
+    US: yfinance info.
+    Returns { current_price, target_price, upside_pct, daily_change_pct, currency, price_note }
     """
     import requests as _req
     import xml.etree.ElementTree as _ET
@@ -249,40 +250,53 @@ def _fetch_price(ticker: str) -> dict:
             items = root.findall('.//item')
             if items:
                 last_data = items[-1].get('data', '').split('|')
+                # Format: 날짜|시가|고가|저가|종가|거래량
                 if len(last_data) >= 5:
-                    price = float(last_data[4])
-                    # Simple target: if undervalued (low PBR), target = price * 1.15; else * 1.08
+                    open_price  = float(last_data[1])  # 시가
+                    close_price = float(last_data[4])  # 종가
+                    daily_change_pct = round((close_price - open_price) / open_price * 100, 2) if open_price > 0 else 0.0
                     fd = STATIC_FUNDAMENTALS.get(code, {})
                     pb = fd.get('pb', 2.0)
                     upside = 1.20 if pb < 1.0 else 1.15 if pb < 2.0 else 1.08
-                    target = round((price * upside) / 100) * 100
+                    target = round((close_price * upside) / 100) * 100
                     return {
-                        'current_price': int(price),
-                        'target_price': int(target),
-                        'upside_pct': round((upside - 1) * 100, 0),
-                        'currency': 'KRW',
-                        'price_note': '네이버 당일 종가'
+                        'current_price':    int(close_price),
+                        'open_price':       int(open_price),
+                        'target_price':     int(target),
+                        'upside_pct':       round((upside - 1) * 100, 0),
+                        'daily_change_pct': daily_change_pct,
+                        'currency':         'KRW',
+                        'price_note':       '네이버 당일 종가'
                     }
         except Exception:
             pass
     else:
         try:
             info = yf.Ticker(ticker).info or {}
-            price  = float(info.get('currentPrice') or info.get('regularMarketPrice') or 0)
-            target = float(info.get('targetMeanPrice') or 0)
+            price       = float(info.get('currentPrice') or info.get('regularMarketPrice') or 0)
+            open_price  = float(info.get('regularMarketOpen') or info.get('open') or price)
+            target      = float(info.get('targetMeanPrice') or 0)
+            daily_change_pct = round((price - open_price) / open_price * 100, 2) if open_price > 0 else 0.0
             if price > 0:
                 upside_pct = round(((target / price) - 1) * 100, 1) if target > 0 else 10.0
                 return {
-                    'current_price': round(price, 2),
-                    'target_price': round(target, 2) if target > 0 else round(price * 1.12, 2),
-                    'upside_pct': upside_pct,
-                    'currency': 'USD',
-                    'price_note': '애널리스트 컨센서스 목표가' if target > 0 else '추정 목표가'
+                    'current_price':    round(price, 2),
+                    'open_price':       round(open_price, 2),
+                    'target_price':     round(target, 2) if target > 0 else round(price * 1.12, 2),
+                    'upside_pct':       upside_pct,
+                    'daily_change_pct': daily_change_pct,
+                    'currency':         'USD',
+                    'price_note':       '애널리스트 컨센서스 목표가' if target > 0 else '추정 목표가'
                 }
         except Exception:
             pass
 
-    return {'current_price': 0, 'target_price': 0, 'upside_pct': 0, 'currency': 'KRW' if is_korean else 'USD', 'price_note': '가격 조회 실패'}
+    return {
+        'current_price': 0, 'open_price': 0, 'target_price': 0,
+        'upside_pct': 0, 'daily_change_pct': 0,
+        'currency': 'KRW' if is_korean else 'USD', 'price_note': '가격 조회 실패'
+    }
+
 
 
 def _build_result(candidate, primary_ticker):
@@ -304,11 +318,13 @@ def _build_result(candidate, primary_ticker):
         "ticker": t, "name": candidate['name'],
         "relation": candidate['relation'], "tag": candidate['tag'],
         "pe": fd['pe'], "pb": fd['pb'], "margin": fd['margin'], "growth": fd['growth'],
-        "current_price": price['current_price'],
-        "target_price": price['target_price'],
-        "upside_pct": price['upside_pct'],
-        "currency": price['currency'],
-        "price_note": price['price_note'],
+        "current_price":    price['current_price'],
+        "target_price":     price['target_price'],
+        "upside_pct":       price['upside_pct'],
+        "daily_change_pct": price['daily_change_pct'],
+        "currency":         price['currency'],
+        "price_note":       price['price_note'],
+
         "value_score": score, "value_grade": grade, "grade_color": color,
         "highlights": highlights, "data_source": fd['source']
     }
