@@ -405,12 +405,30 @@ function App() {
 
                   {/* Stock price large metric */}
                   <div className="mt-6 mb-2">
-                    <span className="text-4xl font-extrabold numeric-font text-white">
+                    <span className={`text-4xl font-extrabold numeric-font ${
+                      stockData.stock.price > stockData.stock.open ? 'text-red-400' :
+                      stockData.stock.price < stockData.stock.open ? 'text-blue-400' :
+                      'text-white'
+                    }`}>
                       {stockData.stock.price.toLocaleString('ko-KR')}
                     </span>
                     <span className="text-sm font-bold text-gray-400 ml-1">
                       {stockData.is_korean ? '원' : '달러'}
                     </span>
+                    {/* Diff from open */}
+                    {stockData.stock.open > 0 && (() => {
+                      const diff = stockData.stock.price - stockData.stock.open;
+                      const isUp = diff > 0;
+                      const isDown = diff < 0;
+                      const diffFmt = (isUp ? '+' : '') + diff.toLocaleString('ko-KR');
+                      return (
+                        <span className={`ml-2 text-base font-bold numeric-font ${
+                          isUp ? 'text-red-400' : isDown ? 'text-blue-400' : 'text-gray-500'
+                        }`}>
+                          ({diffFmt}{stockData.is_korean ? '원' : '$'})
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Performance subgrid */}
@@ -428,14 +446,14 @@ function App() {
                       </span>
                     </div>
                     <div>
-                      <span className="text-emerald-500 font-bold block mb-1">당일 최고가</span>
-                      <span className="font-extrabold text-emerald-400 numeric-font">
+                      <span className="text-gray-400 font-bold block mb-1">당일 최고가</span>
+                      <span className="font-extrabold text-white numeric-font">
                         {stockData.stock.high.toLocaleString('ko-KR')}
                       </span>
                     </div>
                     <div>
-                      <span className="text-red-500 font-bold block mb-1">당일 최저가</span>
-                      <span className="font-extrabold text-red-400 numeric-font">
+                      <span className="text-gray-400 font-bold block mb-1">당일 최저가</span>
+                      <span className="font-extrabold text-white numeric-font">
                         {stockData.stock.low.toLocaleString('ko-KR')}
                       </span>
                     </div>
