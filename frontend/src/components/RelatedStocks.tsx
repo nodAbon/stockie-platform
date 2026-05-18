@@ -163,7 +163,9 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
               <div className="mx-4 mb-3 p-3 rounded-xl bg-gray-950/50 border border-gray-800/60 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[9px] text-gray-600 font-bold mb-0.5">현재가</p>
-                  <p className="text-lg font-black text-white numeric-font">
+                  <p className={`text-lg font-black numeric-font ${
+                    stock.upside_pct > 0 ? 'text-emerald-400' : stock.upside_pct < 0 ? 'text-red-400' : 'text-white'
+                  }`}>
                     {formatPrice(stock.current_price, stock.currency)}
                   </p>
                 </div>
@@ -172,15 +174,23 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
                   <p className="text-[9px] text-gray-600 font-bold mb-0.5">
                     목표가 <span className="text-gray-700">({stock.price_note})</span>
                   </p>
-                  <p className="text-lg font-black text-emerald-400 numeric-font">
+                  <p className="text-lg font-black text-white numeric-font">
                     {formatPrice(stock.target_price, stock.currency)}
                   </p>
                 </div>
                 {stock.upside_pct > 0 && (
                   <div className="ml-auto text-right">
                     <p className="text-[9px] text-gray-600 font-bold mb-0.5">예상 수익률</p>
-                    <p className="text-base font-black text-emerald-400 numeric-font">
+                    <p className="text-base font-black text-white numeric-font">
                       +{stock.upside_pct}%
+                    </p>
+                  </div>
+                )}
+                {stock.upside_pct < 0 && (
+                  <div className="ml-auto text-right">
+                    <p className="text-[9px] text-gray-600 font-bold mb-0.5">예상 수익률</p>
+                    <p className="text-base font-black text-white numeric-font">
+                      {stock.upside_pct}%
                     </p>
                   </div>
                 )}

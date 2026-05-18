@@ -553,6 +553,12 @@ function App() {
                     </div>
                   )}
 
+                  {/* Recharts Stock chart component */}
+                  <StockChart 
+                    history={stockData.stock.history} 
+                    isPositive={stockData.stock.change_pct >= 0} 
+                  />
+
                   {/* Related Stocks — supply-chain value picks */}
                   <RelatedStocks
                     primaryTicker={stockData.stock.ticker}
@@ -560,11 +566,6 @@ function App() {
                     backendUrl={BACKEND_URL}
                   />
 
-                  {/* Recharts Stock chart component */}
-                  <StockChart 
-                    history={stockData.stock.history} 
-                    isPositive={stockData.stock.change_pct >= 0} 
-                  />
                 </div>
               </div>
 
