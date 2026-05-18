@@ -27,9 +27,10 @@ interface RelatedStocksProps {
   primaryTicker: string;
   primaryName: string;
   backendUrl: string;
+  onTickerClick?: (ticker: string) => void;
 }
 
-export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, primaryName, backendUrl }) => {
+export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, primaryName, backendUrl, onTickerClick }) => {
   const [stocks, setStocks]             = useState<RelatedStock[]>([]);
   const [themeReason, setThemeReason]   = useState<string>('');
   const [loading, setLoading]           = useState<boolean>(true);
@@ -130,7 +131,11 @@ export const RelatedStocks: React.FC<RelatedStocksProps> = ({ primaryTicker, pri
                   <span className="text-[10px] font-black text-gray-500 bg-gray-800 rounded px-1.5 py-0.5">
                     #{idx + 1}
                   </span>
-                  <span className="text-base font-black text-white">{stock.name}</span>
+                  <button
+                      onClick={() => onTickerClick?.(stock.ticker)}
+                      className="text-base font-black text-white hover:text-emerald-400 transition-colors cursor-pointer hover:underline underline-offset-2"
+                      title={`${stock.ticker} 레이더 분석`}
+                    >{stock.name}</button>
                   <span className="text-[10px] font-mono text-gray-500 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5">
                     {stock.ticker}
                   </span>

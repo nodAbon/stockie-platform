@@ -198,6 +198,16 @@ function App() {
     }
   };
 
+  // Click any ticker name → run it through the radar
+  const handleTickerClick = (ticker: string) => {
+    setSearchQuery(ticker);
+    fetchStockAnalysis(ticker);
+    // Scroll to the radar section smoothly
+    setTimeout(() => {
+      document.getElementById('stock-radar-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
   return (
     <div className="min-h-screen pb-16 px-4 md:px-8 max-w-7xl mx-auto flex flex-col gap-6">
       {/* 1. Header Toolbar */}
@@ -319,33 +329,36 @@ function App() {
 
       {/* 3.5. Market Intelligence - Surging Stocks & Blue-Chip Radar */}
       <section className="flex flex-col gap-4 mt-2">
-        <MarketIntelligence />
+        <MarketIntelligence onTickerClick={handleTickerClick} />
       </section>
 
       {/* 4. Bottom Section - Stock Search and Crawling Analysis Panel */}
-      <section className="flex flex-col gap-4 mt-2">
+      <section id="stock-radar-section" className="flex flex-col gap-4 mt-2">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800/40 pb-4">
           <h2 className="text-xl font-black text-white flex items-center gap-2">
             🔍 개별 종목 호재/악재 감지 레이더
           </h2>
           
-          {/* Ticker Search Box */}
-          <form onSubmit={handleSearchSubmit} className="relative w-full md:w-[350px]">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input 
-              type="text" 
-              placeholder="종목코드(예: 005930) 또는 영문 티커(예: TSLA)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-gray-900/80 border border-gray-800 rounded-xl py-2.5 pl-10 pr-20 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-gray-600"
-            />
-            <button 
+        {/* Ticker Search Box — fixed icon + button sizing */}
+          <form onSubmit={handleSearchSubmit} className="relative w-full md:w-[380px] flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="종목코드(005930) 또는 티커(TSLA)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-gray-900/80 border border-gray-800 rounded-xl py-2.5 pl-8 pr-3 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-gray-600"
+              />
+            </div>
+            <button
               type="submit"
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-lg bg-emerald-500 text-xs font-bold text-black hover:bg-emerald-400 transition-colors"
+              className="flex-shrink-0 h-[42px] px-4 rounded-xl bg-emerald-500 text-xs font-bold text-black hover:bg-emerald-400 transition-colors whitespace-nowrap"
             >
               종목 진단
             </button>
           </form>
+
         </div>
 
         {/* Load indicators or stock results */}
@@ -564,7 +577,9 @@ function App() {
                     primaryTicker={stockData.stock.ticker}
                     primaryName={stockData.stock.name}
                     backendUrl={BACKEND_URL}
+                    onTickerClick={handleTickerClick}
                   />
+
 
                 </div>
               </div>

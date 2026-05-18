@@ -18,7 +18,11 @@ interface BlueChipStock {
   strength: string;
 }
 
-export const MarketIntelligence: React.FC = () => {
+interface MarketIntelligenceProps {
+  onTickerClick?: (ticker: string) => void;
+}
+
+export const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ onTickerClick }) => {
   const [activeCategory, setActiveCategory] = useState<string>('semiconductor');
   const [loadingPrices, setLoadingPrices] = useState<boolean>(true);
 
@@ -158,13 +162,14 @@ export const MarketIntelligence: React.FC = () => {
             {surgingStocks.map((stock) => {
               const isPositive = stock.changePct >= 0;
               return (
-                <div 
-                  key={stock.ticker} 
+                 <div
+                  key={stock.ticker}
+                  onClick={() => onTickerClick?.(stock.ticker)}
                   className="p-3 bg-gray-900/40 rounded-xl border border-gray-800/80 hover:border-amber-500/20 hover:bg-gray-900/60 transition-all flex flex-col gap-2 relative overflow-hidden group cursor-pointer"
                 >
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{stock.name}</span>
+                      <span className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">{stock.name}</span>
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-950 border border-gray-800 text-gray-400">
                         {stock.ticker}
                       </span>
@@ -234,7 +239,13 @@ export const MarketIntelligence: React.FC = () => {
               >
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-bold text-white">{stock.name}</h4>
+                    <button
+                      onClick={() => onTickerClick?.(stock.ticker)}
+                      className="text-sm font-bold text-white hover:text-indigo-300 transition-colors cursor-pointer hover:underline underline-offset-2"
+                      title={`${stock.ticker} 레이더 분석`}
+                    >
+                      {stock.name}
+                    </button>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                       {stock.subSector}
                     </span>
